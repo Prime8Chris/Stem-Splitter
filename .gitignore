@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+stem_splitter/tests/
+stem_splitter/static/js/__tests__/
+
+# Node / Jest (lives in stem_splitter/static/js/)
+**/node_modules/
+**/package-lock.json
+
+# Logs (legacy — now in ~/.stem_splitter/logs/)
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config
+.mcp.json
+.claude/
+
+# Model cache
+pretrained_models/
