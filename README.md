@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>AI-powered audio stem separation with a professional mixing interface</strong>
+  <strong>Open Source Stem Separation Tool</strong>
 </p>
 
 <p align="center">
