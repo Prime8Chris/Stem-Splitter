@@ -93,4 +93,4 @@ def get_python_exe():
 PYTHON_EXE = get_python_exe()
 
 # Stems eligible for MIDI conversion (pitched instruments + drums)
-MIDI_ELIGIBLE_STEMS = {"vocals", "bass", "guitar", "piano", "drums"}
+MIDI_ELIGIBLE_STEMS = {"vocals", "bass", "guitar", "piano", "drums", "other"}

@@ -37,7 +37,7 @@ const App = {
     other: '#fbbf24', guitar: '#fb923c', piano: '#22d3ee'
   },
   /** @type {Set<string>} */
-  MIDI_ELIGIBLE_STEMS: new Set(['vocals', 'bass', 'guitar', 'piano', 'drums']),
+  MIDI_ELIGIBLE_STEMS: new Set(['vocals', 'bass', 'guitar', 'piano', 'drums', 'other']),
 
   // State
   /** @type {FileObj[]} */

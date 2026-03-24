@@ -347,7 +347,7 @@ body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radiu
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 174px;
+  min-width: 174px;
   flex-shrink: 0;
 }
 .transport-btn {
@@ -377,6 +377,21 @@ body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radiu
   background: rgba(129,140,248,0.3);
   border-color: rgba(129,140,248,0.4);
   color: #fff;
+}
+.midi-play-btn {
+  margin-left: 4px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+.midi-play-btn:hover {
+  opacity: 1;
+  background: rgba(129,140,248,0.2);
+}
+.midi-play-btn.midi-active {
+  background: rgba(99,102,241,0.3);
+  border-color: rgba(99,102,241,0.5);
+  color: #818cf8;
+  opacity: 1;
 }
 .transport-seek {
   flex: 1;

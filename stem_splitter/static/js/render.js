@@ -32,6 +32,7 @@ const ICONS = {
   play: '&#9654;',
   pause: '&#10074;&#10074;',
   stop: '&#9632;',
+  midiPlay: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
   chevron: '&#9654;',
   close: '&times;'
 };
@@ -147,6 +148,13 @@ function renderMixer(fileIndex, f, src) {
   html += `<button class="transport-btn ${isPlaying ? 'active' : ''}" onclick="event.stopPropagation(); togglePlay('${src}',${fileIndex})" aria-label="Play">${ICONS.play}</button>`;
   html += `<button class="transport-btn ${isPaused ? 'active' : ''}" onclick="event.stopPropagation(); pausePlayback()" aria-label="Pause">${ICONS.pause}</button>`;
   html += `<button class="transport-btn" onclick="event.stopPropagation(); stopPlayback()" aria-label="Stop">${ICONS.stop}</button>`;
+  // MIDI play button: visible only when at least one stem has MIDI data
+  const hasMidi = f.stems.some(s => s._midiState === 'done' && s._midiPath);
+  if (hasMidi) {
+    const midiMode = !!f._midiMode;
+    const label = midiMode ? 'Switch to audio' : 'Switch to MIDI';
+    html += `<button class="transport-btn midi-play-btn ${midiMode ? 'midi-active' : ''}" onclick="event.stopPropagation(); toggleMidiPlayback('${src}',${fileIndex})" aria-label="${label}" title="${label}">${ICONS.midiPlay}</button>`;
+  }
   html += `</div>`;
   html += `<input type="range" class="transport-seek" id="seek-${uid}" min="0" max="1000" value="0" oninput="seekTo('${src}',${fileIndex}, this.value)" aria-label="Seek position">`;
   html += `<span class="transport-time" id="time-${uid}">0:00 / 0:00</span>`;

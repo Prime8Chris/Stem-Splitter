@@ -306,8 +306,8 @@ describe('render.js', () => {
       const html = renderMixer(0, f, 'queue');
       // vocals is MIDI eligible
       expect(html).toContain("convertToMidi('queue',0,0)");
-      // other is NOT MIDI eligible — should show disabled
-      expect(html).toContain('midi-ineligible');
+      // other is also MIDI eligible
+      expect(html).toContain("convertToMidi('queue',0,1)");
     });
 
     test('renders MIDI timeline row when conversion is done', () => {

@@ -47,7 +47,7 @@ describe('app.js', () => {
       expect(App.MIDI_ELIGIBLE_STEMS.has('guitar')).toBe(true);
       expect(App.MIDI_ELIGIBLE_STEMS.has('piano')).toBe(true);
       expect(App.MIDI_ELIGIBLE_STEMS.has('drums')).toBe(true);
-      expect(App.MIDI_ELIGIBLE_STEMS.has('other')).toBe(false);
+      expect(App.MIDI_ELIGIBLE_STEMS.has('other')).toBe(true);
     });
   });
 

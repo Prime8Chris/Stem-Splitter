@@ -149,8 +149,12 @@ function applyMixState(src, idx) {
   const f = App.getFileObj(src, idx);
   if (!f) return;
   const ctx = App.getAudioCtx();
-  // Unified solo: if ANY audio stem or MIDI track is soloed, only soloed sources play
-  const anySoloed = f.stems.some(s => s._soloed || s._midiSoloed);
+  const midiMode = !!f._midiMode;
+
+  // Separate solo checks: in MIDI mode only MIDI solos matter, in audio mode both matter
+  const anyAudioSoloed = f.stems.some(s => s._soloed);
+  const anyMidiSoloed = f.stems.some(s => s._midiSoloed);
+  const anySoloed = anyAudioSoloed || anyMidiSoloed;
 
   // Audio stems
   if (f._audioEls) {
@@ -158,7 +162,8 @@ function applyMixState(src, idx) {
       const el = f._audioEls[si];
       if (!el) return;
       let vol = (stem._volume !== undefined ? stem._volume : 100) / 100;
-      if (stem._muted) vol = 0;
+      if (midiMode) vol = 0;                         // MIDI mode: silence all audio
+      else if (stem._muted) vol = 0;
       else if (anySoloed && !stem._soloed) vol = 0;
       el.gain.gain.setValueAtTime(vol, ctx.currentTime);
     });
@@ -168,8 +173,12 @@ function applyMixState(src, idx) {
   f.stems.forEach(stem => {
     if (!stem._midiGainNode) return;
     let vol = 1;
-    if (stem._midiMuted !== false) vol = 0;
-    else if (anySoloed && !stem._midiSoloed) vol = 0;
+    if (midiMode) {                                   // MIDI mode: play all MIDI
+      if (anyMidiSoloed && !stem._midiSoloed) vol = 0; // only respect MIDI solos
+    } else {
+      if (stem._midiMuted !== false) vol = 0;
+      else if (anySoloed && !stem._midiSoloed) vol = 0;
+    }
     stem._midiGainNode.gain.setValueAtTime(vol, ctx.currentTime);
   });
 }
@@ -271,6 +280,23 @@ function openMidiFolder(src, fi, si) {
   if (stem._midiPath) {
     pywebview.api.open_file_location(stem._midiPath);
   }
+}
+
+/**
+ * Toggle all MIDI playback for a file.
+ * If any MIDI track is unmuted, mute them all; otherwise unmute them all.
+ * @param {string} src - 'queue' or 'lib'
+ * @param {number} fi - File index
+ */
+function toggleMidiPlayback(src, fi) {
+  const f = App.getFileObj(src, fi);
+  if (!f || !f.stems) return;
+  const midiStems = f.stems.filter(s => s._midiState === 'done' && s._midiPath);
+  if (midiStems.length === 0) return;
+  // Toggle between MIDI mode and audio mode
+  f._midiMode = !f._midiMode;
+  applyMixState(src, fi);
+  renderFiles();
 }
 
 /** @param {string} src @param {number} fi @param {number} si */
@@ -477,18 +503,305 @@ function startTimeUpdate() {
 // --- MIDI Synthesis Engine ---
 
 /**
- * Per-instrument voice configuration for MIDI synthesis.
- * Each entry defines oscillator type, amplitude, attack/release ratios,
- * and optional detune for a richer sound.
- * @type {Object<string, {type: OscillatorType, gain: number, atk: number, rel: number, detune: number}>}
+ * Per-instrument synthesis functions.
+ * Each returns an array of {node, end} objects to track active voices.
+ * Instruments are designed to match their real-world counterparts:
+ *   drums  — 707-style kit (noise snare/hats, sine kick, triangle toms)
+ *   bass   — low square wave with noise pluck transient
+ *   guitar — detuned sawtooth + square through bandpass filter
+ *   piano  — detuned triangle + square with fast hammer-like decay
+ *   vocals — filtered sawtooth with slow attack (strings/vocal synth)
+ *   other  — multi-voice detuned sawtooths (supersaw)
  */
-const MIDI_VOICES = {
-  bass:    { type: 'sine',     gain: 0.20, atk: 0.005, rel: 0.06, detune: 0 },
-  vocals:  { type: 'triangle', gain: 0.14, atk: 0.02,  rel: 0.08, detune: 3 },
-  guitar:  { type: 'sawtooth', gain: 0.10, atk: 0.005, rel: 0.05, detune: 5 },
-  piano:   { type: 'square',   gain: 0.08, atk: 0.002, rel: 0.10, detune: 0 },
-  drums:   { type: 'triangle', gain: 0.18, atk: 0.001, rel: 0.03, detune: 0 },
-  _default:{ type: 'triangle', gain: 0.12, atk: 0.01,  rel: 0.04, detune: 0 },
+
+/**
+ * Create a white-noise buffer source for percussive sounds.
+ * @param {AudioContext} ctx
+ * @returns {AudioBufferSourceNode}
+ */
+function _createNoise(ctx) {
+  const buf = ctx.createBuffer(1, ctx.sampleRate * 0.15, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  return src;
+}
+
+/**
+ * 707-style drum kit.  Maps MIDI pitch regions to kick, snare, closed hat,
+ * open hat, and toms.  Uses noise for snare/hats, sine with pitch sweep
+ * for kick, triangle for toms.
+ */
+function _synthDrums(ctx, pitch, t0, dur, dest) {
+  const nodes = [];
+  // basic-pitch outputs arbitrary pitches from drum audio, so we map by
+  // frequency range: low = kick, low-mid = snare/tom, mid = tom, high = hats
+  const freq = midiToFreq(pitch);
+
+  if (freq < 150) {
+    // --- Kick: sine with pitch envelope ---
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, t0);
+    osc.frequency.exponentialRampToValueAtTime(40, t0 + 0.12);
+    env.gain.setValueAtTime(0.40, t0);
+    env.gain.exponentialRampToValueAtTime(0.001, t0 + 0.30);
+    osc.connect(env); env.connect(dest);
+    osc.start(t0); osc.stop(t0 + 0.31);
+    nodes.push({ osc, end: t0 + 0.31 });
+  } else if (freq < 400) {
+    // --- Snare: noise burst + sine body ---
+    const noise = _createNoise(ctx);
+    const nEnv = ctx.createGain();
+    const hpf = ctx.createBiquadFilter();
+    hpf.type = 'highpass'; hpf.frequency.value = 2000;
+    nEnv.gain.setValueAtTime(0.28, t0);
+    nEnv.gain.exponentialRampToValueAtTime(0.001, t0 + 0.15);
+    noise.connect(hpf); hpf.connect(nEnv); nEnv.connect(dest);
+    noise.start(t0); noise.stop(t0 + 0.16);
+    // body
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.value = 180;
+    env.gain.setValueAtTime(0.22, t0);
+    env.gain.exponentialRampToValueAtTime(0.001, t0 + 0.10);
+    osc.connect(env); env.connect(dest);
+    osc.start(t0); osc.stop(t0 + 0.11);
+    nodes.push({ osc: noise, end: t0 + 0.16 }, { osc, end: t0 + 0.11 });
+  } else if (freq < 1200) {
+    // --- Toms: triangle with pitch sweep ---
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq * 1.3, t0);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.7, t0 + 0.04);
+    env.gain.setValueAtTime(0.25, t0);
+    env.gain.exponentialRampToValueAtTime(0.001, t0 + 0.20);
+    osc.connect(env); env.connect(dest);
+    osc.start(t0); osc.stop(t0 + 0.21);
+    nodes.push({ osc, end: t0 + 0.21 });
+  } else if (dur < 0.08) {
+    // --- Closed hi-hat: short filtered noise ---
+    const noise = _createNoise(ctx);
+    const env = ctx.createGain();
+    const bpf = ctx.createBiquadFilter();
+    bpf.type = 'bandpass'; bpf.frequency.value = 8000; bpf.Q.value = 1.5;
+    env.gain.setValueAtTime(0.18, t0);
+    env.gain.exponentialRampToValueAtTime(0.001, t0 + 0.06);
+    noise.connect(bpf); bpf.connect(env); env.connect(dest);
+    noise.start(t0); noise.stop(t0 + 0.07);
+    nodes.push({ osc: noise, end: t0 + 0.07 });
+  } else {
+    // --- Open hi-hat: longer filtered noise ---
+    const noise = _createNoise(ctx);
+    const env = ctx.createGain();
+    const bpf = ctx.createBiquadFilter();
+    bpf.type = 'bandpass'; bpf.frequency.value = 8000; bpf.Q.value = 1.0;
+    env.gain.setValueAtTime(0.18, t0);
+    env.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+    noise.connect(bpf); bpf.connect(env); env.connect(dest);
+    noise.start(t0); noise.stop(t0 + 0.26);
+    nodes.push({ osc: noise, end: t0 + 0.26 });
+  }
+  return nodes;
+}
+
+/**
+ * Bass: low square wave with a noise pluck transient layered on top.
+ */
+function _synthBass(ctx, pitch, t0, dur, dest) {
+  const freq = midiToFreq(pitch);
+  const nodes = [];
+
+  // Main square voice
+  const osc = ctx.createOscillator();
+  const env = ctx.createGain();
+  const lpf = ctx.createBiquadFilter();
+  lpf.type = 'lowpass';
+  lpf.frequency.setValueAtTime(800, t0);
+  lpf.frequency.exponentialRampToValueAtTime(300, t0 + Math.min(0.15, dur * 0.5));
+  osc.type = 'square';
+  osc.frequency.value = freq;
+  const atk = Math.min(0.005, dur * 0.1);
+  env.gain.setValueAtTime(0, t0);
+  env.gain.linearRampToValueAtTime(0.22, t0 + atk);
+  env.gain.setValueAtTime(0.18, t0 + atk);
+  env.gain.linearRampToValueAtTime(0, t0 + dur);
+  osc.connect(lpf); lpf.connect(env); env.connect(dest);
+  osc.start(t0); osc.stop(t0 + dur + 0.01);
+  nodes.push({ osc, end: t0 + dur + 0.01 });
+
+  // Noise pluck transient
+  const noise = _createNoise(ctx);
+  const nEnv = ctx.createGain();
+  const bpf = ctx.createBiquadFilter();
+  bpf.type = 'bandpass'; bpf.frequency.value = freq * 3; bpf.Q.value = 2;
+  nEnv.gain.setValueAtTime(0.08, t0);
+  nEnv.gain.exponentialRampToValueAtTime(0.001, t0 + 0.04);
+  noise.connect(bpf); bpf.connect(nEnv); nEnv.connect(dest);
+  noise.start(t0); noise.stop(t0 + 0.05);
+  nodes.push({ osc: noise, end: t0 + 0.05 });
+
+  return nodes;
+}
+
+/**
+ * Guitar synth: detuned sawtooth + square through bandpass filter for body.
+ */
+function _synthGuitar(ctx, pitch, t0, dur, dest) {
+  const freq = midiToFreq(pitch);
+  const nodes = [];
+
+  const bpf = ctx.createBiquadFilter();
+  bpf.type = 'bandpass'; bpf.frequency.value = freq * 2.5; bpf.Q.value = 0.8;
+  bpf.connect(dest);
+
+  // Sawtooth voice
+  const osc1 = ctx.createOscillator();
+  const env1 = ctx.createGain();
+  osc1.type = 'sawtooth'; osc1.frequency.value = freq; osc1.detune.value = 7;
+  const atk = Math.min(0.005, dur * 0.1);
+  const rel = Math.min(0.08, dur * 0.3);
+  env1.gain.setValueAtTime(0, t0);
+  env1.gain.linearRampToValueAtTime(0.10, t0 + atk);
+  env1.gain.setValueAtTime(0.08, t0 + atk);
+  env1.gain.linearRampToValueAtTime(0, t0 + dur);
+  osc1.connect(env1); env1.connect(bpf);
+  osc1.start(t0); osc1.stop(t0 + dur + 0.01);
+  nodes.push({ osc: osc1, end: t0 + dur + 0.01 });
+
+  // Square voice (detuned down)
+  const osc2 = ctx.createOscillator();
+  const env2 = ctx.createGain();
+  osc2.type = 'square'; osc2.frequency.value = freq; osc2.detune.value = -7;
+  env2.gain.setValueAtTime(0, t0);
+  env2.gain.linearRampToValueAtTime(0.06, t0 + atk);
+  env2.gain.setValueAtTime(0.05, t0 + atk);
+  env2.gain.linearRampToValueAtTime(0, t0 + dur);
+  osc2.connect(env2); env2.connect(bpf);
+  osc2.start(t0); osc2.stop(t0 + dur + 0.01);
+  nodes.push({ osc: osc2, end: t0 + dur + 0.01 });
+
+  return nodes;
+}
+
+/**
+ * Piano synth: detuned triangle + square with fast hammer attack and natural decay.
+ */
+function _synthPiano(ctx, pitch, t0, dur, dest) {
+  const freq = midiToFreq(pitch);
+  const nodes = [];
+  const effDur = Math.max(0.08, dur);
+
+  // Triangle voice (fundamental)
+  const osc1 = ctx.createOscillator();
+  const env1 = ctx.createGain();
+  osc1.type = 'triangle'; osc1.frequency.value = freq;
+  env1.gain.setValueAtTime(0, t0);
+  env1.gain.linearRampToValueAtTime(0.12, t0 + 0.002); // hammer strike
+  env1.gain.exponentialRampToValueAtTime(0.06, t0 + Math.min(0.15, effDur * 0.4));
+  env1.gain.linearRampToValueAtTime(0, t0 + effDur);
+  osc1.connect(env1); env1.connect(dest);
+  osc1.start(t0); osc1.stop(t0 + effDur + 0.01);
+  nodes.push({ osc: osc1, end: t0 + effDur + 0.01 });
+
+  // Square voice (slight detune for warmth)
+  const osc2 = ctx.createOscillator();
+  const env2 = ctx.createGain();
+  osc2.type = 'square'; osc2.frequency.value = freq; osc2.detune.value = 4;
+  env2.gain.setValueAtTime(0, t0);
+  env2.gain.linearRampToValueAtTime(0.05, t0 + 0.002);
+  env2.gain.exponentialRampToValueAtTime(0.02, t0 + Math.min(0.12, effDur * 0.3));
+  env2.gain.linearRampToValueAtTime(0, t0 + effDur);
+  osc2.connect(env2); env2.connect(dest);
+  osc2.start(t0); osc2.stop(t0 + effDur + 0.01);
+  nodes.push({ osc: osc2, end: t0 + effDur + 0.01 });
+
+  return nodes;
+}
+
+/**
+ * Vocals/strings: filtered sawtooth with slow attack for a pad-like vocal synth.
+ */
+function _synthVocals(ctx, pitch, t0, dur, dest) {
+  const freq = midiToFreq(pitch);
+  const nodes = [];
+  const effDur = Math.max(0.1, dur);
+
+  const lpf = ctx.createBiquadFilter();
+  lpf.type = 'lowpass'; lpf.frequency.value = freq * 3; lpf.Q.value = 0.7;
+  lpf.connect(dest);
+
+  // Sawtooth voice 1 (main)
+  const osc1 = ctx.createOscillator();
+  const env1 = ctx.createGain();
+  osc1.type = 'sawtooth'; osc1.frequency.value = freq; osc1.detune.value = 3;
+  const atk = Math.min(0.04, effDur * 0.25);
+  const rel = Math.min(0.10, effDur * 0.3);
+  env1.gain.setValueAtTime(0, t0);
+  env1.gain.linearRampToValueAtTime(0.10, t0 + atk);
+  if (effDur > atk + rel) {
+    env1.gain.setValueAtTime(0.08, t0 + atk);
+    env1.gain.linearRampToValueAtTime(0, t0 + effDur);
+  } else {
+    env1.gain.linearRampToValueAtTime(0, t0 + effDur);
+  }
+  osc1.connect(env1); env1.connect(lpf);
+  osc1.start(t0); osc1.stop(t0 + effDur + 0.01);
+  nodes.push({ osc: osc1, end: t0 + effDur + 0.01 });
+
+  // Triangle voice 2 (octave up, softer — shimmer)
+  const osc2 = ctx.createOscillator();
+  const env2 = ctx.createGain();
+  osc2.type = 'triangle'; osc2.frequency.value = freq * 2; osc2.detune.value = -5;
+  env2.gain.setValueAtTime(0, t0);
+  env2.gain.linearRampToValueAtTime(0.04, t0 + atk * 1.5);
+  env2.gain.linearRampToValueAtTime(0, t0 + effDur);
+  osc2.connect(env2); env2.connect(lpf);
+  osc2.start(t0); osc2.stop(t0 + effDur + 0.01);
+  nodes.push({ osc: osc2, end: t0 + effDur + 0.01 });
+
+  return nodes;
+}
+
+/**
+ * Other/default: multi-voice detuned sawtooths (supersaw).
+ */
+function _synthOther(ctx, pitch, t0, dur, dest) {
+  const freq = midiToFreq(pitch);
+  const nodes = [];
+  const effDur = Math.max(0.06, dur);
+  const detunes = [-12, -5, 0, 5, 12]; // 5 voices
+  const perVoiceGain = 0.04;
+  const atk = Math.min(0.01, effDur * 0.15);
+
+  detunes.forEach(d => {
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.type = 'sawtooth'; osc.frequency.value = freq; osc.detune.value = d;
+    env.gain.setValueAtTime(0, t0);
+    env.gain.linearRampToValueAtTime(perVoiceGain, t0 + atk);
+    env.gain.setValueAtTime(perVoiceGain * 0.85, t0 + atk);
+    env.gain.linearRampToValueAtTime(0, t0 + effDur);
+    osc.connect(env); env.connect(dest);
+    osc.start(t0); osc.stop(t0 + effDur + 0.01);
+    nodes.push({ osc, end: t0 + effDur + 0.01 });
+  });
+
+  return nodes;
+}
+
+/** Map stem names to their synthesis functions */
+const MIDI_SYNTHS = {
+  drums:   _synthDrums,
+  bass:    _synthBass,
+  guitar:  _synthGuitar,
+  piano:   _synthPiano,
+  vocals:  _synthVocals,
+  other:   _synthOther,
+  _default: _synthOther,
 };
 
 /**
@@ -520,11 +833,25 @@ function scheduleMidiPlayback(f, mediaTime) {
   const ctx = App.getAudioCtx();
   f.stems.forEach(stem => {
     if (!stem._midiNotes || stem._midiNotes.length === 0) return;
+    const justCreated = !stem._midiGainNode;
     ensureMidiGain(stem);
+    // Sync gain after creation so it matches MIDI mode / mute state
+    if (justCreated) {
+      const anyMidiSoloed = f.stems.some(s => s._midiSoloed);
+      const anySoloed = f.stems.some(s => s._soloed || s._midiSoloed);
+      let vol = 1;
+      if (f._midiMode) {
+        if (anyMidiSoloed && !stem._midiSoloed) vol = 0;
+      } else {
+        if (stem._midiMuted !== false) vol = 0;
+        else if (anySoloed && !stem._midiSoloed) vol = 0;
+      }
+      stem._midiGainNode.gain.setValueAtTime(vol, ctx.currentTime);
+    }
     if (stem._midiNextNoteIdx === undefined) stem._midiNextNoteIdx = 0;
     if (!stem._midiActiveOscs) stem._midiActiveOscs = [];
 
-    const voice = MIDI_VOICES[stem.name] || MIDI_VOICES._default;
+    const synthFn = MIDI_SYNTHS[stem.name] || MIDI_SYNTHS._default;
 
     // Clean up expired oscillators
     stem._midiActiveOscs = stem._midiActiveOscs.filter(o => o.end > ctx.currentTime);
@@ -537,33 +864,13 @@ function scheduleMidiPlayback(f, mediaTime) {
       if (n[0] > mediaTime + lookahead) break;
       if (n[0] < mediaTime - 0.05) { stem._midiNextNoteIdx++; continue; }
 
-      if (stem._midiActiveOscs.length < 32) {
+      if (stem._midiActiveOscs.length < 48) {
         const delay = Math.max(0, n[0] - mediaTime);
         const t0 = ctx.currentTime + delay;
         const dur = Math.max(0.05, n[1] - n[0]);
 
-        const osc = ctx.createOscillator();
-        const env = ctx.createGain();
-        osc.type = voice.type;
-        osc.frequency.value = midiToFreq(n[2]);
-        if (voice.detune) osc.detune.value = voice.detune;
-
-        const atk = Math.min(voice.atk, dur * 0.2);
-        const rel = Math.min(voice.rel, dur * 0.4);
-        const sustain = voice.gain * 0.85;
-        env.gain.setValueAtTime(0, t0);
-        env.gain.linearRampToValueAtTime(voice.gain, t0 + atk);
-        if (dur > atk + rel) {
-          env.gain.setValueAtTime(sustain, t0 + atk + (dur - atk - rel) * 0.3);
-          env.gain.setValueAtTime(sustain, t0 + dur - rel);
-        }
-        env.gain.linearRampToValueAtTime(0, t0 + dur);
-
-        osc.connect(env);
-        env.connect(stem._midiGainNode);
-        osc.start(t0);
-        osc.stop(t0 + dur + 0.01);
-        stem._midiActiveOscs.push({ osc, end: t0 + dur + 0.01 });
+        const newNodes = synthFn(ctx, n[2], t0, dur, stem._midiGainNode);
+        stem._midiActiveOscs.push(...newNodes);
       }
       stem._midiNextNoteIdx++;
     }
