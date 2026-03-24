@@ -27,6 +27,16 @@
 
 <br>
 
+<p align="center">
+  <img src="stem_splitter/assets/Stem Splitter Screenshot.png" alt="Stem Splitter" width="720">
+</p>
+
+<p align="center">
+  <img src="stem_splitter/assets/Stem Splitter Screenshot2.png" alt="Stem Splitter Mixer" width="720">
+</p>
+
+<br>
+
 ---
 
 <br>
