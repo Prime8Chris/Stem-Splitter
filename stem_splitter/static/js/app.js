@@ -224,12 +224,20 @@ function removeFile(index, e) {
 function removeLibItem(index, e) {
   e.stopPropagation();
   const f = App.library[index];
-  if (f && f._audioEls) cleanupAudioEls(f);
+  if (!f) return;
+  if (f._audioEls) cleanupAudioEls(f);
   if (App.expandedLibIndex === index) {
     stopPlayback();
     App.expandedLibIndex = -1;
   } else if (App.expandedLibIndex > index) {
     App.expandedLibIndex--;
+  }
+  // Delete from disk so it doesn't reappear on restart
+  if (f.stemDir) {
+    pywebview.api.delete_library_item(f.stemDir).then(result => {
+      const res = JSON.parse(result);
+      if (!res.ok) App.showToast('Failed to delete: ' + res.error, 'error');
+    });
   }
   App.library.splice(index, 1);
   renderFiles();

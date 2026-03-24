@@ -137,6 +137,24 @@ class Api:
                         })
             return json.dumps(results)
 
+    def delete_library_item(self, stem_dir):
+        """Delete a library item's stem directory from disk."""
+        try:
+            target = Path(stem_dir).resolve()
+            output = Path(self.default_output).resolve()
+            # Safety: only allow deletion within the output directory
+            if not str(target).startswith(str(output)):
+                logger.warning("Refused to delete outside output dir: %s", target)
+                return json.dumps({"ok": False, "error": "Path outside output directory"})
+            if target.is_dir():
+                import shutil
+                shutil.rmtree(target)
+                logger.info("Deleted library item: %s", target)
+            return json.dumps({"ok": True})
+        except Exception as e:
+            logger.exception("Failed to delete library item: %s", stem_dir)
+            return json.dumps({"ok": False, "error": str(e)})
+
     # --- Splitting ---
 
     def start_split(self, paths_json, model, output_dir, device="cpu"):
