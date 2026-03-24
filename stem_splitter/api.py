@@ -123,11 +123,17 @@ class Api:
                                 stem_data["midiPath"] = str(midi_path)
                             stems.append(stem_data)
                     if stems:
+                        # Use most recent stem file mtime as the split timestamp
+                        mtime = max(
+                            (song_dir / f"{s['name']}.wav").stat().st_mtime
+                            for s in stems
+                        )
                         results.append({
                             "name": song_dir.name,
                             "model": model_name,
                             "stemDir": str(song_dir),
                             "stems": stems,
+                            "timestamp": mtime,
                         })
             return json.dumps(results)
 

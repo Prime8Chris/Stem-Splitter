@@ -54,7 +54,7 @@ function renderFiles() {
   let html = `
     <div class="file-header">
       <div class="file-actions">
-        <button class="btn-small" onclick="addFiles()" aria-label="Add new files to split">+ Split New Song</button>
+        <button class="btn-small btn-new-song" onclick="addFiles()" aria-label="Add new files to split">+ New Song</button>
         ${App.files.length > 0 ? '<button class="btn-small" onclick="clearFiles()" aria-label="Clear all files from queue">Clear</button>' : ''}
       </div>
     </div>
@@ -80,10 +80,19 @@ function renderFiles() {
     html += `</div>`;
   });
 
-  // Library section
+  html += '</div>';
+
+  // Library section — separate scrollable container
   if (App.library.length > 0) {
     html += `<div class="library-divider">Previous Splits</div>`;
+    html += `<div class="library-list${App.expandedLibIndex >= 0 ? ' expanded' : ''}" role="list">`;
+    const LAZY_BATCH = App._libRendered || 20;
     App.library.forEach((f, i) => {
+      if (i >= LAZY_BATCH && App.expandedLibIndex !== i) {
+        // Render a placeholder for lazy loading
+        html += `<div class="file-item-wrap lazy-placeholder" data-lib-index="${i}" role="listitem"></div>`;
+        return;
+      }
       const isExp = App.expandedLibIndex === i;
       html += `<div class="file-item-wrap" role="listitem">`;
       html += `<div class="file-item has-stems ${isExp ? 'expanded' : ''}" onclick="toggleMixer('lib',${i})" aria-expanded="${isExp}">`;
@@ -91,16 +100,20 @@ function renderFiles() {
       html += `<div class="file-name" title="${escAttr(f.stemDir)}">${escHtml(f.name)}</div>`;
       html += `<span class="library-model">${escHtml(f.model === 'htdemucs_6s' ? '6-stem' : '4-stem')}</span>`;
       html += `<div class="file-chevron">${ICONS.chevron}</div>`;
+      html += `<div class="file-remove" onclick="removeLibItem(${i}, event)" role="button" aria-label="Remove ${escAttr(f.name)}">${ICONS.close}</div>`;
       html += `</div>`;
       if (isExp) {
         html += renderMixer(i, f, 'lib');
       }
       html += `</div>`;
     });
+    html += `</div>`;
   }
 
-  html += '</div>';
   zone.innerHTML = html;
+
+  // Set up lazy loading observer for library items
+  setupLibraryLazyLoad();
 
   // Draw waveforms for expanded mixers and load MIDI notes if needed
   if (App.expandedIndex >= 0 && App.files[App.expandedIndex] && App.files[App.expandedIndex].stems) {
@@ -200,4 +213,47 @@ function renderMixer(fileIndex, f, src) {
   html += `<div class="shortcut-hint"><kbd>Space</kbd> Play/Pause &nbsp; <kbd>Esc</kbd> Stop &nbsp; <kbd>Ctrl+O</kbd> Add Files</div>`;
   html += `</div>`;
   return html;
+}
+
+/** Render a single library item's full HTML (for lazy loading). */
+function renderLibItem(i) {
+  const f = App.library[i];
+  if (!f) return '';
+  const isExp = App.expandedLibIndex === i;
+  let html = '';
+  html += `<div class="file-item has-stems ${isExp ? 'expanded' : ''}" onclick="toggleMixer('lib',${i})" aria-expanded="${isExp}">`;
+  html += `<div class="file-icon">${ICONS.headphones}</div>`;
+  html += `<div class="file-name" title="${escAttr(f.stemDir)}">${escHtml(f.name)}</div>`;
+  html += `<span class="library-model">${escHtml(f.model === 'htdemucs_6s' ? '6-stem' : '4-stem')}</span>`;
+  html += `<div class="file-chevron">${ICONS.chevron}</div>`;
+  html += `<div class="file-remove" onclick="removeLibItem(${i}, event)" role="button" aria-label="Remove ${escAttr(f.name)}">${ICONS.close}</div>`;
+  html += `</div>`;
+  if (isExp) {
+    html += renderMixer(i, f, 'lib');
+  }
+  return html;
+}
+
+/** Set up IntersectionObserver to lazy-load library placeholders as they scroll into view. */
+function setupLibraryLazyLoad() {
+  const container = document.querySelector('.library-list');
+  if (!container) return;
+  if (App._libObserver) App._libObserver.disconnect();
+
+  App._libObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const el = entry.target;
+      if (!el.classList.contains('lazy-placeholder')) return;
+      const idx = parseInt(el.dataset.libIndex, 10);
+      if (isNaN(idx) || !App.library[idx]) return;
+      el.classList.remove('lazy-placeholder');
+      el.innerHTML = renderLibItem(idx);
+      App._libObserver.unobserve(el);
+    });
+  }, { root: container, rootMargin: '100px' });
+
+  container.querySelectorAll('.lazy-placeholder').forEach(el => {
+    App._libObserver.observe(el);
+  });
 }

@@ -165,6 +165,30 @@ function addFiles() {
   pywebview.api.pick_files().then(result => {
     if (!result) return;
     const newFiles = JSON.parse(result);
+    // Move completed splits to library before adding new songs
+    const done = App.files.filter(f => f.status === 'done' && f.stems);
+    if (done.length > 0) {
+      done.forEach(f => {
+        cleanupAudioEls(f);
+        // Convert to library format
+        const libItem = {
+          name: f.name.replace(/\.[^.]+$/, ''),
+          model: f._splitModel || document.getElementById('modelSelect').value,
+          stemDir: f.stemDir || '',
+          stems: f.stems,
+          timestamp: Date.now() / 1000,
+          _buffers: null
+        };
+        // Avoid duplicates in library
+        if (!App.library.find(l => l.stemDir === libItem.stemDir)) {
+          App.library.push(libItem);
+        }
+      });
+      App.files = App.files.filter(f => f.status !== 'done');
+      App.library.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      if (App.expandedIndex >= 0) App.expandedIndex = -1;
+      stopPlayback();
+    }
     newFiles.forEach(f => {
       if (!App.files.find(x => x.path === f.path)) {
         App.files.push({ ...f, status: 'pending', stems: null, stemDir: null });
@@ -189,6 +213,25 @@ function removeFile(index, e) {
   if (App.expandedIndex === index) App.expandedIndex = -1;
   else if (App.expandedIndex > index) App.expandedIndex--;
   App.files.splice(index, 1);
+  renderFiles();
+}
+
+/**
+ * Remove a library item from Previous Splits.
+ * @param {number} index - Library index to remove
+ * @param {Event} e - Click event (propagation stopped)
+ */
+function removeLibItem(index, e) {
+  e.stopPropagation();
+  const f = App.library[index];
+  if (f && f._audioEls) cleanupAudioEls(f);
+  if (App.expandedLibIndex === index) {
+    stopPlayback();
+    App.expandedLibIndex = -1;
+  } else if (App.expandedLibIndex > index) {
+    App.expandedLibIndex--;
+  }
+  App.library.splice(index, 1);
   renderFiles();
 }
 
@@ -347,6 +390,12 @@ function markFileDone(index, stemsData) {
   App.files[index].status = 'done';
   App.files[index].stems = stems;
   App.files[index]._buffers = null;
+  // Derive stemDir from the first stem path
+  if (stems.length > 0 && stems[0].path) {
+    const parts = stems[0].path.replace(/\\/g, '/').split('/');
+    parts.pop(); // remove filename
+    App.files[index].stemDir = parts.join('/');
+  }
   renderFiles();
 }
 
@@ -391,6 +440,7 @@ function loadLibrary() {
     });
     const queueNames = new Set(App.files.filter(f => f.stems).map(f => f.name.replace(/\.[^.]+$/, '')));
     App.library = App.library.filter(l => !queueNames.has(l.name));
+    App.library.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     renderFiles();
   });
 }

@@ -660,6 +660,17 @@ body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radiu
   outline: 2px solid #818cf8;
   outline-offset: 2px;
 }
+.btn-new-song {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
+  color: white;
+  border: none;
+  box-shadow: 0 2px 12px rgba(99,102,241,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.btn-new-song:hover {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
+  color: white;
+  box-shadow: 0 4px 16px rgba(99,102,241,0.45);
+}
 
 /* Controls 2x2 grid */
 .controls-grid {
@@ -832,6 +843,18 @@ select option { background: var(--select-option-bg); color: var(--text-primary);
 .btn-cancel.visible { display: block; }
 
 /* Library section */
+.library-list {
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+  transition: max-height 0.3s ease;
+}
+.library-list.expanded { max-height: 70vh; }
+.library-list::-webkit-scrollbar { width: 6px; }
+.library-list::-webkit-scrollbar-track { background: transparent; }
+.library-list::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+.lazy-placeholder { height: 38px; }
 .library-divider {
   display: flex;
   align-items: center;
