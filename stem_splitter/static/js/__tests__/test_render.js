@@ -111,7 +111,7 @@ describe('render.js', () => {
       const zone = document.getElementById('dropZone');
       expect(zone.className).not.toContain('empty');
       expect(zone.innerHTML).toContain('song.mp3');
-      expect(zone.innerHTML).toContain('+ Split New Song');
+      expect(zone.innerHTML).toContain('+ New Song');
       expect(zone.innerHTML).toContain('Clear');
     });
 

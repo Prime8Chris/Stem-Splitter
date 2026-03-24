@@ -237,6 +237,13 @@ function setupTestEnv(modules) {
     arrayBuffer: () => Promise.resolve(new ArrayBuffer(1024)),
   }));
 
+  // Mock IntersectionObserver (not available in jsdom)
+  window.IntersectionObserver = jest.fn(() => ({
+    observe: jest.fn(),
+    unobserve: jest.fn(),
+    disconnect: jest.fn(),
+  }));
+
   // Mock matchMedia
   window.matchMedia = jest.fn((query) => ({
     matches: false,

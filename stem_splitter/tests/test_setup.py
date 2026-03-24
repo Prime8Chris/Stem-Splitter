@@ -49,12 +49,14 @@ class TestChecks:
 class TestEnsureDependencies:
     """All tests bypass the state cache and save to prevent side effects."""
 
+    @patch("stem_splitter.setup.sys")
     @patch("stem_splitter.setup._save_state")
     @patch("stem_splitter.setup._load_state", return_value=None)
     @patch("stem_splitter.setup.check_torch_has_cuda", return_value=True)
     @patch("stem_splitter.setup.check_gpu_available", return_value="RTX 4090")
     @patch("stem_splitter.setup.check_demucs_installed", return_value=True)
-    def test_all_ready(self, mock_demucs, mock_gpu, mock_cuda, mock_load, mock_save):
+    def test_all_ready(self, mock_demucs, mock_gpu, mock_cuda, mock_load, mock_save, mock_sys):
+        mock_sys.platform = "win32"
         result = ensure_dependencies()
         assert result["demucs_ok"] is True
         assert result["gpu_ready"] is True
@@ -82,13 +84,15 @@ class TestEnsureDependencies:
         assert result["demucs_ok"] is True
         mock_pip.assert_called_once()
 
+    @patch("stem_splitter.setup.sys")
     @patch("stem_splitter.setup._save_state")
     @patch("stem_splitter.setup._load_state", return_value=None)
     @patch("stem_splitter.setup._run_pip", return_value=(True, None))
     @patch("stem_splitter.setup.check_torch_has_cuda", side_effect=[False, True])
     @patch("stem_splitter.setup.check_gpu_available", return_value="RTX 4090")
     @patch("stem_splitter.setup.check_demucs_installed", return_value=True)
-    def test_installs_cuda_torch(self, mock_demucs, mock_gpu, mock_cuda, mock_pip, mock_load, mock_save):
+    def test_installs_cuda_torch(self, mock_demucs, mock_gpu, mock_cuda, mock_pip, mock_load, mock_save, mock_sys):
+        mock_sys.platform = "win32"
         result = ensure_dependencies()
         assert result["gpu_ready"] is True
         mock_pip.assert_called_once()
@@ -127,27 +131,31 @@ class TestEnsureDependencies:
         assert len(result["errors"]) > 0
         assert "Failed to install Demucs" in result["errors"][0]
 
+    @patch("stem_splitter.setup.sys")
     @patch("stem_splitter.setup._save_state")
     @patch("stem_splitter.setup._load_state", return_value=None)
     @patch("stem_splitter.setup._run_pip", return_value=(False, "Timeout"))
     @patch("stem_splitter.setup.check_torch_has_cuda", return_value=False)
     @patch("stem_splitter.setup.check_gpu_available", return_value="RTX 4090")
     @patch("stem_splitter.setup.check_demucs_installed", return_value=True)
-    def test_cuda_torch_install_fails(self, mock_demucs, mock_gpu, mock_cuda, mock_pip, mock_load, mock_save):
+    def test_cuda_torch_install_fails(self, mock_demucs, mock_gpu, mock_cuda, mock_pip, mock_load, mock_save, mock_sys):
         """GPU found but CUDA torch install fails — gpu_ready should be False."""
+        mock_sys.platform = "win32"
         result = ensure_dependencies()
         assert result["gpu_name"] == "RTX 4090"
         assert result["gpu_ready"] is False
         assert len(result["errors"]) > 0
 
+    @patch("stem_splitter.setup.sys")
     @patch("stem_splitter.setup._save_state")
     @patch("stem_splitter.setup._load_state", return_value=None)
     @patch("stem_splitter.setup._run_pip", return_value=(True, None))
     @patch("stem_splitter.setup.check_torch_has_cuda", side_effect=[False, False])
     @patch("stem_splitter.setup.check_gpu_available", return_value="RTX 4090")
     @patch("stem_splitter.setup.check_demucs_installed", return_value=True)
-    def test_cuda_installed_but_still_no_cuda(self, mock_demucs, mock_gpu, mock_cuda, mock_pip, mock_load, mock_save):
+    def test_cuda_installed_but_still_no_cuda(self, mock_demucs, mock_gpu, mock_cuda, mock_pip, mock_load, mock_save, mock_sys):
         """CUDA torch installed OK but still no CUDA detected — error reported."""
+        mock_sys.platform = "win32"
         result = ensure_dependencies()
         assert result["gpu_ready"] is False
         assert any("still not detected" in e for e in result["errors"])

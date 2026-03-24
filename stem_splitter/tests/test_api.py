@@ -382,7 +382,9 @@ class TestTorchCudaInstall:
             api.install_torch_cuda()
             mock_thread.assert_called_once()
 
-    def test_do_install_torch_cuda_success(self, api, mock_window):
+    @patch("stem_splitter.api.sys")
+    def test_do_install_torch_cuda_success(self, mock_sys, api, mock_window):
+        mock_sys.platform = "win32"
         with patch("stem_splitter.api.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             api._do_install_torch_cuda()
@@ -391,30 +393,44 @@ class TestTorchCudaInstall:
         assert any("torchInstallStatus" in c and "success" in c for c in js_calls)
 
     def test_do_install_torch_cuda_failure(self, api, mock_window):
-        with patch("stem_splitter.api.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=1, stderr="CUDA not found")
-            api._do_install_torch_cuda()
+        with patch("stem_splitter.api.sys") as mock_sys:
+            mock_sys.platform = "win32"
+            with patch("stem_splitter.api.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=1, stderr="CUDA not found")
+                api._do_install_torch_cuda()
 
         js_calls = get_js_calls(mock_window)
         assert any("torchInstallStatus" in c and "error" in c for c in js_calls)
 
     def test_do_install_torch_cuda_timeout(self, api, mock_window):
         import subprocess
-        with patch("stem_splitter.api.subprocess.run") as mock_run:
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="pip", timeout=600)
-            api._do_install_torch_cuda()
+        with patch("stem_splitter.api.sys") as mock_sys:
+            mock_sys.platform = "win32"
+            with patch("stem_splitter.api.subprocess.run") as mock_run:
+                mock_run.side_effect = subprocess.TimeoutExpired(cmd="pip", timeout=600)
+                api._do_install_torch_cuda()
 
         js_calls = get_js_calls(mock_window)
         assert any("torchInstallStatus" in c and "error" in c for c in js_calls)
         assert any("timed out" in c.lower() for c in js_calls)
 
     def test_do_install_torch_cuda_exception(self, api, mock_window):
-        with patch("stem_splitter.api.subprocess.run") as mock_run:
-            mock_run.side_effect = OSError("network error")
-            api._do_install_torch_cuda()
+        with patch("stem_splitter.api.sys") as mock_sys:
+            mock_sys.platform = "win32"
+            with patch("stem_splitter.api.subprocess.run") as mock_run:
+                mock_run.side_effect = OSError("network error")
+                api._do_install_torch_cuda()
 
         js_calls = get_js_calls(mock_window)
         assert any("torchInstallStatus" in c and "error" in c for c in js_calls)
+
+    def test_do_install_torch_cuda_skipped_on_macos(self, api, mock_window):
+        with patch("stem_splitter.api.sys") as mock_sys:
+            mock_sys.platform = "darwin"
+            api._do_install_torch_cuda()
+
+        js_calls = get_js_calls(mock_window)
+        assert any("not supported" in c.lower() for c in js_calls)
 
 
 # --- Misc ---
@@ -427,17 +443,17 @@ class TestMisc:
         assert "some text" in call_arg
 
     @patch("stem_splitter.api.os.path.isdir", return_value=True)
-    @patch("stem_splitter.api.os.startfile")
-    def test_open_output_folder(self, mock_startfile, mock_isdir, api):
+    @patch("stem_splitter.api._open_folder")
+    def test_open_output_folder(self, mock_open, mock_isdir, api):
         api._last_stem_dir = "/output/stems"
         api.open_output_folder()
-        mock_startfile.assert_called_once_with("/output/stems")
+        mock_open.assert_called_once_with("/output/stems")
 
     @patch("stem_splitter.api.os.path.isfile", return_value=True)
-    @patch("stem_splitter.api.subprocess.Popen")
-    def test_open_file_location(self, mock_popen, mock_isfile, api):
+    @patch("stem_splitter.api._open_file_in_folder")
+    def test_open_file_location(self, mock_open, mock_isfile, api):
         api.open_file_location("/path/to/file.mid")
-        mock_popen.assert_called_once()
+        mock_open.assert_called_once()
 
 
 # --- Export Mix ---
