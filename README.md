@@ -67,7 +67,7 @@ pip install -r requirements.txt
 python -m stem_splitter
 ```
 
-Or on Windows, double-click **`Stem Splitter.bat`**.
+Or use the launcher: **`Stem Splitter.bat`** (Windows) or **`./stem_splitter.sh`** (macOS/Linux).
 
 > [!NOTE]
 > On first launch, a splash screen handles all setup automatically — installing Demucs, detecting your GPU, and configuring CUDA PyTorch if available. Subsequent launches are instant.
@@ -174,6 +174,7 @@ Or on Windows, double-click **`Stem Splitter.bat`**.
 ```
 Stem Splitter/
 ├── Stem Splitter.bat              # Windows launcher
+├── stem_splitter.sh               # macOS/Linux launcher
 ├── requirements.txt
 ├── stem_splitter/
 │   ├── __init__.py
@@ -240,7 +241,10 @@ See [docs/SECURITY.md](docs/SECURITY.md) for the full security model.
 <details>
 <summary><strong>User Data</strong></summary>
 
-Settings are stored in `~/.stem_splitter/`:
+Settings are stored in a platform-appropriate location:
+- **Windows:** `%APPDATA%\StemSplitter\`
+- **macOS:** `~/Library/Application Support/StemSplitter/`
+- **Linux:** `~/.local/share/stem_splitter/`
 
 | File | Purpose |
 |------|---------|

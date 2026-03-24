@@ -15,9 +15,16 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = PACKAGE_DIR / "static"
 ASSETS_DIR = PACKAGE_DIR / "assets"
 
-# User data directory — stores settings and cached state outside the project root
-DATA_DIR = Path.home() / ".stem_splitter"
-DATA_DIR.mkdir(exist_ok=True)
+# User data directory — platform-appropriate location
+if sys.platform == "win32":
+    _app_data = os.environ.get("APPDATA")
+    DATA_DIR = Path(_app_data) / "StemSplitter" if _app_data else Path.home() / ".stem_splitter"
+elif sys.platform == "darwin":
+    DATA_DIR = Path.home() / "Library" / "Application Support" / "StemSplitter"
+else:
+    _xdg = os.environ.get("XDG_DATA_HOME")
+    DATA_DIR = Path(_xdg) / "stem_splitter" if _xdg else Path.home() / ".local" / "share" / "stem_splitter"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Default output
 DEFAULT_OUTPUT = str(Path.home() / "Music" / "Stem Splitter Output")
@@ -76,7 +83,8 @@ STEM_COLORS = {
 # Python executable detection
 def get_python_exe():
     exe = sys.executable
-    if exe.lower().endswith("pythonw.exe"):
+    # On Windows, pythonw.exe can't run console subprocesses properly
+    if sys.platform == "win32" and exe.lower().endswith("pythonw.exe"):
         candidate = exe[:-len("pythonw.exe")] + "python.exe"
         if os.path.isfile(candidate):
             return candidate

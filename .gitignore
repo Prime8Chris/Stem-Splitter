@@ -16,8 +16,6 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
-stem_splitter/tests/
-stem_splitter/static/js/__tests__/
 
 # Node / Jest (lives in stem_splitter/static/js/)
 **/node_modules/

@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import sys
 import subprocess
 import threading
 from pathlib import Path
@@ -14,6 +15,30 @@ from .processing import DemucsProcessor, SplitCancelledError, MidiConverter
 from .settings import load_settings, set_setting
 
 logger = logging.getLogger(__name__)
+
+
+def _open_folder(folder):
+    """Open a folder in the platform's file manager."""
+    if sys.platform == "win32":
+        os.startfile(folder)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", folder])
+    else:
+        subprocess.Popen(["xdg-open", folder])
+
+
+def _open_file_in_folder(filepath):
+    """Open the parent folder and select/highlight the file."""
+    if sys.platform == "win32":
+        subprocess.Popen(
+            ["explorer", "/select,", filepath],
+            creationflags=CREATE_NO_WINDOW,
+        )
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", filepath])
+    else:
+        # xdg-open on the parent directory (no universal "select file" on Linux)
+        subprocess.Popen(["xdg-open", os.path.dirname(filepath)])
 
 
 class Api:
@@ -78,23 +103,20 @@ class Api:
     def open_output_folder(self):
         folder = self._last_stem_dir or self.default_output
         if os.path.isdir(folder):
-            os.startfile(folder)
+            _open_folder(folder)
         elif os.path.isdir(self.default_output):
-            os.startfile(self.default_output)
+            _open_folder(self.default_output)
 
     def copy_to_clipboard(self, text):
         self._js(f"navigator.clipboard.writeText({json.dumps(text)})")
 
     def open_file_location(self, filepath):
-        """Open the folder containing a file and select it in Explorer."""
+        """Open the folder containing a file and select/highlight it."""
         filepath = os.path.normpath(filepath)
         if os.path.isfile(filepath):
-            subprocess.Popen(
-                ["explorer", "/select,", filepath],
-                creationflags=CREATE_NO_WINDOW,
-            )
+            _open_file_in_folder(filepath)
         elif os.path.isdir(os.path.dirname(filepath)):
-            os.startfile(os.path.dirname(filepath))
+            _open_folder(os.path.dirname(filepath))
 
     # --- Library ---
 
@@ -143,7 +165,9 @@ class Api:
             target = Path(stem_dir).resolve()
             output = Path(self.default_output).resolve()
             # Safety: only allow deletion within the output directory
-            if not str(target).startswith(str(output)):
+            try:
+                target.relative_to(output)
+            except ValueError:
                 logger.warning("Refused to delete outside output dir: %s", target)
                 return json.dumps({"ok": False, "error": "Path outside output directory"})
             if target.is_dir():
@@ -382,6 +406,9 @@ class Api:
         threading.Thread(target=self._do_install_torch_cuda, daemon=True).start()
 
     def _do_install_torch_cuda(self):
+        if sys.platform == "darwin":
+            self._js_call("torchInstallStatus", "error", "CUDA is not supported on macOS.")
+            return
         self._js_call("torchInstallStatus", "installing", "Installing CUDA PyTorch... this may take a few minutes.")
         try:
             from .config import PYTHON_EXE

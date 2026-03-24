@@ -516,7 +516,8 @@ function exportMix(src, fileIndex) {
   const baseName = f.name.replace(/\.[^.]+$/, '') + '_mix.wav';
   const outputDir = document.getElementById('outputPath').textContent;
   if (!outputDir) { App.showToast('Set an output folder first', 'error'); return; }
-  const outputPath = outputDir + '/' + baseName;
+  const sep = outputDir.includes('\\') ? '\\' : '/';
+  const outputPath = outputDir + sep + baseName;
 
   App.showToast('Exporting mix...', 'success');
   pywebview.api.export_mix(JSON.stringify(stems), outputPath);

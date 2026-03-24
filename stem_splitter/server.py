@@ -5,6 +5,7 @@ import logging
 import threading
 import urllib.parse
 from http.server import SimpleHTTPRequestHandler
+from pathlib import Path
 from socketserver import ThreadingMixIn, TCPServer
 
 from .config import ALLOWED_AUDIO_EXTENSIONS, MIME_TYPES, ASSETS_DIR, AUDIO_HOST
@@ -30,13 +31,16 @@ class AudioHandler(SimpleHTTPRequestHandler):
     def _is_path_allowed(self, file_path):
         """Validate that file_path is within an allowed directory."""
         try:
-            real_path = os.path.realpath(file_path)
+            real = Path(os.path.realpath(file_path))
             allowed_dirs = getattr(self.server, "allowed_dirs", [])
-            return any(
-                real_path.startswith(os.path.realpath(d) + os.sep)
-                or real_path == os.path.realpath(d)
-                for d in allowed_dirs
-            )
+            for d in allowed_dirs:
+                allowed = Path(os.path.realpath(d))
+                try:
+                    real.relative_to(allowed)
+                    return True
+                except ValueError:
+                    continue
+            return False
         except (ValueError, OSError):
             return False
 

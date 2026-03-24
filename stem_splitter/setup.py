@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 
 from .config import PYTHON_EXE, DATA_DIR, CREATE_NO_WINDOW
 from .processing import DemucsProcessor
@@ -123,8 +124,8 @@ def ensure_dependencies(on_status=None):
             errors.append(f"Failed to install Demucs: {err}")
             status(f"Demucs install failed: {err}")
 
-    # Step 2: GPU detection
-    gpu_name = check_gpu_available()
+    # Step 2: GPU detection (CUDA is NVIDIA-only, not available on macOS)
+    gpu_name = None if sys.platform == "darwin" else check_gpu_available()
     if gpu_name:
         status(f"GPU detected: {gpu_name}")
 
