@@ -23,11 +23,11 @@
 ---
 
 <p align="center">
-  <img src="stem_splitter/assets/Stem Splitter Screenshot.png" alt="Stem Splitter — Main Interface" width="800">
+  <img src="stem_splitter/assets/Stem Splitter Screenshot.png?v=2" alt="Stem Splitter — Main Interface" width="800">
 </p>
 
 <p align="center">
-  <img src="stem_splitter/assets/Stem Splitter Screenshot2.png" alt="Stem Splitter — Mixer Panel" width="800">
+  <img src="stem_splitter/assets/Stem Splitter Screenshot2.png?v=2" alt="Stem Splitter — Mixer Panel" width="800">
 </p>
 
 ---
